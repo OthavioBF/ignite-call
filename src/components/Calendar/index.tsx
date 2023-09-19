@@ -10,6 +10,9 @@ import {
   CalendarTitle,
 } from './styles'
 import dayjs from 'dayjs'
+import { useRouter } from 'next/router'
+import { useQuery } from '@tanstack/react-query'
+import { api } from '@/services/api'
 
 interface CalendarWeek {
   week: number
@@ -20,6 +23,11 @@ interface CalendarWeek {
 }
 
 type CalendarWeeks = CalendarWeek[]
+
+interface BlockedDates {
+  blockedWeekDays: number[]
+  blockedDates: number[]
+}
 
 interface CalendarProps {
   selectedDate: Date | null
@@ -36,7 +44,26 @@ export function Calendar({ selectedDate, onDateSelected }: CalendarProps) {
 
   const shortWeekDays = getWeekDays({ short: true })
 
+  const router = useRouter()
+  const username = String(router.query.username)
+
+  const { data: blockedDates } = useQuery<BlockedDates>(
+    ['blocked-dates', currentDate.get('year'), currentDate.get('month')],
+    async () => {
+      const response = await api.get(`/users/${username}/blocked-dates/`, {
+        params: {
+          year: currentDate.get('year'),
+          month: currentDate.get('month') + 1,
+        },
+      })
+
+      return response.data
+    },
+  )
+
   const calendarWeeks = useMemo(() => {
+    if (!blockedDates) return []
+
     const daysInMonthArray = Array.from({
       length: currentDate.daysInMonth(),
     })
@@ -44,7 +71,13 @@ export function Calendar({ selectedDate, onDateSelected }: CalendarProps) {
         return currentDate.set('date', i + 1)
       })
       .map((date) => {
-        return { date, disabled: date.endOf('day').isBefore(new Date()) }
+        return {
+          date,
+          disabled:
+            date.endOf('day').isBefore(new Date()) ||
+            blockedDates.blockedWeekDays.includes(date.get('day')) ||
+            blockedDates.blockedDates.includes(date.get('date')),
+        }
       })
 
     const firstMonthWeekDay = currentDate.get('day')
@@ -97,7 +130,7 @@ export function Calendar({ selectedDate, onDateSelected }: CalendarProps) {
     )
 
     return calendarWeeks
-  }, [currentDate])
+  }, [currentDate, blockedDates])
 
   function handlePreviousMonth() {
     const previousMonth = currentDate.subtract(1, 'month')
